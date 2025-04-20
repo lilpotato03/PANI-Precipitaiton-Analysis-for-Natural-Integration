@@ -1,0 +1,7 @@
+ee
+numpy
+pandas
+scipy
+matplotlib
+jenkspy
+geemap
