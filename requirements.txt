@@ -1,7 +1,10 @@
 ee
+ipykernel
 numpy
 pandas
 scipy
 matplotlib
 jenkspy
 geemap
+black
+python-dotenv
