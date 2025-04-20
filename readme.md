@@ -6,7 +6,7 @@ Follow these steps to set up the project on your local machine:
 
    ```bash
    git clone https://github.com/lilpotato03/PANI-Precipitaiton-Analysis-for-Natural-Integration.git
-   cd PANI-Precipitaiton-Analysis-for-Natural-Integration.git
+   cd PANI-Precipitaiton-Analysis-for-Natural-Integration
    ```
 
 2. **Create a virtual environment:**
