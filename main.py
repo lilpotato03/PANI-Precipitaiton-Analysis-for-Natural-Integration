@@ -2,6 +2,8 @@ import ee
 import os
 from dotenv import load_dotenv
 from data_collection import get_state_districs,get_region_for_districts,generate_mask_for_region,get_data_for_districts
+from computations_funcs import smooth_stack_from_array_dict,resize_img
+from data_initialization import categorical_labels
 
 load_dotenv()
 
@@ -35,13 +37,20 @@ selected_districts=selected_districts_unfiltered.split(',')
 selected_districts=[district.strip() for district in selected_districts]
 
 print(f'Selected Districts are:\n{selected_districts}')
+print(f'Collecting data for {selected_districts}')
+print(f'Getting region scale and boundary for districts')
 region,scale,region_self_mask=get_region_for_districts(state_source,selected_districts)
 
+print(f'Generating masks for selected region')
 mask_projection,region_mask=generate_mask_for_region(region,scale)
 
+print(f'Collecting data for {selected_districts}')
 array_dict=get_data_for_districts(region,scale,mask_projection,region_self_mask)
 
-print(array_dict.keys())
+print(f'Resizing and smoothing collected data')
+smoothed_stack,band_names=smooth_stack_from_array_dict(array_dict,categorical_bands=categorical_labels.keys())
+print(f'Stack shape: {smoothed_stack.shape}')
+print(f'Band names: {band_names}')
 
 
 
