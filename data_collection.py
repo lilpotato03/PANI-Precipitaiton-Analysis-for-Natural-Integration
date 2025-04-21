@@ -69,6 +69,8 @@ def get_region_for_districts(state_source,districsts):
 
 def get_data_for_districts(region,scale,mask_projection,region_self_mask):
     elev = ee.Image('USGS/SRTMGL1_003').clip(region)
+    dem=elev.select('elevation')
+    # print('--- dem metadata:', dem.getInfo())
     slope = ee.Terrain.slope(elev)
 
     # LULC: WorldCover
@@ -150,6 +152,7 @@ def get_data_for_districts(region,scale,mask_projection,region_self_mask):
     rc = lulc.multiply(0.3).add(soil.multiply(0.3)).add(slope.multiply(0.4)).rename('runoff_coeff')
 
     stack = ee.Image.cat([
+        dem.rename('dem').unmask(0),
         slope.rename('slope').unmask(0),
         lulc.rename('lulc').unmask(0),
         soil.rename('soilTx').unmask(0),
@@ -165,8 +168,20 @@ def get_data_for_districts(region,scale,mask_projection,region_self_mask):
         # filled_dem.rename('filled_dem').unmask(0)
     ])
 
-
+    print('--- Bands in final "stack" object:', stack.bandNames().getInfo())
+    
     stack_resampled = stack.reproject(crs=mask_projection, scale=scale)
     masked_stack = stack_resampled.updateMask(region_self_mask)
-    array_dict = masked_stack.sampleRectangle(region=region, defaultValue=0).getInfo()
+    print('--- Bands in "masked_stack" object:', masked_stack.bandNames().getInfo())
+    temp = masked_stack.sampleRectangle(region=region, defaultValue=0).getInfo()
+    bandNames=masked_stack.bandNames().getInfo()
+    array_dict = {'properties':{}}
+    for band in temp['properties']:
+        print(band)
+        if band in bandNames:
+            print(f'Band found: {band}')
+            array_dict['properties'][band]=(temp['properties'][band])
+            print(f'Appended band: {band}')
+        else:
+            print(f'Band not found: {band}')
     return array_dict

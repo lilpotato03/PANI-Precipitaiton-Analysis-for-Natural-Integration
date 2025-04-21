@@ -8,3 +8,4 @@ jenkspy
 geemap
 black
 python-dotenv
+scikit-learn
