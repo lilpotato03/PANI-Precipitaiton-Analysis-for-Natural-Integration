@@ -2,8 +2,9 @@ import ee
 import os
 from dotenv import load_dotenv
 from data_collection import get_state_districs,get_region_for_districts,generate_mask_for_region,get_data_for_districts
-from computations_funcs import smooth_stack_from_array_dict,resize_img
-from data_initialization import categorical_labels
+from computations_funcs import smooth_stack_from_array_dict,resize_img,generate_probability_mask
+from data_initialization import categorical_labels,mcdm_weights
+import numpy as np
 
 load_dotenv()
 
@@ -51,6 +52,15 @@ print(f'Resizing and smoothing collected data')
 smoothed_stack,band_names=smooth_stack_from_array_dict(array_dict,categorical_bands=categorical_labels.keys())
 print(f'Stack shape: {smoothed_stack.shape}')
 print(f'Band names: {band_names}')
+
+print(f'Generating probability mask')
+prob_mask, level_mask, weighted_sum  = generate_probability_mask(smoothed_stack=smoothed_stack,band_names=band_names,weights=mcdm_weights)
+masked_prob = (np.where(resize_img(region_mask) == 1, prob_mask, np.nan))
+masked_level =( np.where(resize_img(region_mask) == 1, level_mask, np.nan))
+print(f'Probability mask shape: {masked_prob.shape}')
+print(f'Level mask shape: {masked_level.shape}')
+print(f'Unique Values in probability mask: {np.unique(masked_level)}')
+
 
 
 
