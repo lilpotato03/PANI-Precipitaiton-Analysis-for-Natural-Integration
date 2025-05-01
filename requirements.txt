@@ -9,3 +9,6 @@ geemap
 black
 python-dotenv
 scikit-learn
+pysheds
+rasterio
+seaborn

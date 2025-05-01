@@ -2,10 +2,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import math
-# import geemap
+from pysheds.grid import Grid
+import os
+import tempfile
+import requests
 import ee
 from data_initialization import start,end
 from computations_funcs import fill_depressions
+import rasterio
+
 
 def generate_mask_for_region(region,scale):
 
@@ -67,28 +72,31 @@ def get_region_for_districts(state_source,districsts):
     region_self_mask = ee.Image.constant(1).clip(region).selfMask()
     return region,scale,region_self_mask
 
-def get_data_for_districts(region,scale,mask_projection,region_self_mask):
+def get_data_for_districts(region,scale,mask_projection,region_self_mask,mask_value=99999999):
     elev = ee.Image('USGS/SRTMGL1_003').clip(region)
     dem=elev.select('elevation')
     # print('--- dem metadata:', dem.getInfo())
-    slope = ee.Terrain.slope(elev)
+    slope = ee.Terrain.slope(elev).unmask(0)
 
     # LULC: WorldCover
     lulc = ee.ImageCollection("ESA/WorldCover/v100") \
                 .filterDate("2020-01-01", "2020-12-31") \
                 .first() \
                 .select('Map') \
-                .clip(region)
+                .clip(region)\
+                .unmask(60)
 
     # Soil:Texture
     soil = ee.Image('OpenLandMap/SOL/SOL_TEXTURE-CLASS_USDA-TT_M/v02') \
                 .select('b0') \
-                .clip(region)
+                .clip(region) \
+                .unmask(10)
 
     # Geomorphology: ERGo ALOS
     geom = ee.Image('CSP/ERGo/1_0/Global/ALOS_landforms') \
                 .select('constant') \
-                .clip(region)
+                .clip(region)\
+                .unmask(11)
 
     # Rainfall: CHIRPS daily sum
     rain = ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY') \
@@ -119,32 +127,9 @@ def get_data_for_districts(region,scale,mask_projection,region_self_mask):
     #     .select('lwe_thickness') \
     #     .mean() \
     #     .clip(region)
-
-    # DRAINAGE NETWORK
-    # filled_dem = fill_depressions(elev)
+    
     flow_acc = ee.Image("MERIT/Hydro/v1_0_1") \
         .select("elv").clip(region)
-    acc = ee.Image("MERIT/Hydro/v1_0_1").select("upa").clip(region)
-
-    stream_threshold = acc.gt(1).rename('streams')
-    # Stream order approximation via connected components (labeling)
-    stream_order = stream_threshold.mask(stream_threshold).connectedComponents(
-        connectedness=ee.Kernel.plus(1),
-        maxSize=256
-    ).select('labels').clip(region)
-
-
-    # # Drainage density = stream length / area
-    # pixel_length = ee.Number(scale)
-    # stream_length = stream_threshold.multiply(pixel_length).reduceRegion(
-    #     reducer=ee.Reducer.sum(),
-    #     geometry=region,
-    #     scale=scale,
-    #     maxPixels=1e10
-    # )
-    # area = region.area()
-    # drainage_density = ee.Number(stream_length.get('streams')).divide(area)
-
     # DISTANCE TO WATER
     water_mask = ndwi.gt(0.2)
     distance_to_water = water_mask.fastDistanceTransform(30).sqrt().clip(region).rename('dist_to_water')
@@ -152,36 +137,28 @@ def get_data_for_districts(region,scale,mask_projection,region_self_mask):
     rc = lulc.multiply(0.3).add(soil.multiply(0.3)).add(slope.multiply(0.4)).rename('runoff_coeff')
 
     stack = ee.Image.cat([
-        dem.rename('dem').unmask(0),
-        slope.rename('slope').unmask(0),
-        lulc.rename('lulc').unmask(0),
-        soil.rename('soilTx').unmask(0),
-        geom.rename('geom').unmask(0),
-        rain.rename('rain').unmask(0),
-        ndwi.rename('ndwi').unmask(0),
-        soil_moisture.rename('soil_moisture').unmask(0),
-        # gwl.rename('gwl').unmask(0),
-        rc.unmask(0),
-        distance_to_water.unmask(0),
-        stream_order.rename('stream_order').unmask(0),
-        flow_acc.rename('flow_acc').unmask(0),
-        # filled_dem.rename('filled_dem').unmask(0)
+        dem.rename('dem').unmask(mask_value),
+        slope.rename('slope').unmask(mask_value),
+        lulc.rename('lulc').unmask(mask_value),
+        soil.rename('soilTx').unmask(mask_value),
+        geom.rename('geom').unmask(mask_value),
+        rain.rename('rain').unmask(mask_value),
+        ndwi.rename('ndwi').unmask(mask_value),
+        soil_moisture.rename('soil_moisture').unmask(mask_value),
+        # gwl.rename('gwl').unmask(mask_value),
+        rc.unmask(mask_value),
+        distance_to_water.unmask(mask_value),
+        flow_acc.rename('flow_acc').unmask(mask_value),
     ])
 
-    print('--- Bands in final "stack" object:', stack.bandNames().getInfo())
+   
     
     stack_resampled = stack.reproject(crs=mask_projection, scale=scale)
     masked_stack = stack_resampled.updateMask(region_self_mask)
-    print('--- Bands in "masked_stack" object:', masked_stack.bandNames().getInfo())
-    temp = masked_stack.sampleRectangle(region=region, defaultValue=0).getInfo()
+    temp = masked_stack.sampleRectangle(region=region, defaultValue=mask_value).getInfo()
     bandNames=masked_stack.bandNames().getInfo()
     array_dict = {'properties':{}}
     for band in temp['properties']:
-        print(band)
         if band in bandNames:
-            print(f'Band found: {band}')
             array_dict['properties'][band]=(temp['properties'][band])
-            print(f'Appended band: {band}')
-        else:
-            print(f'Band not found: {band}')
     return array_dict
