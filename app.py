@@ -29,12 +29,15 @@ import ee
 import base64
 from io import BytesIO
 import zipfile
+from dotenv import load_dotenv
+load_dotenv()
 
+PROJECT_NAME = os.getenv("PROJECT_NAME")
 
 ee.Authenticate()
-ee.Initialize(project='ee-crce9542ce')
+ee.Initialize(project=PROJECT_NAME)
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyDKeZTET-zYoffnmqBWBbtsnOMtESL-jTA')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 genai.configure(api_key=GEMINI_API_KEY)
 
 def create_zones(image, num_zones=5):

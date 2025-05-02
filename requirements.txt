@@ -12,3 +12,9 @@ scikit-learn
 pysheds
 rasterio
 seaborn
+streamlit
+streamlit_folium
+streamlit_extras
+streamlit_echarts
+setuptools
+google.generativeai
