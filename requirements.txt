@@ -17,4 +17,5 @@ streamlit_folium
 streamlit_extras
 streamlit_echarts
 setuptools
+statsmodels
 google.generativeai
