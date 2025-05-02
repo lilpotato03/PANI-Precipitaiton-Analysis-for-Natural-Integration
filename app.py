@@ -395,7 +395,6 @@ st.markdown("""
         padding: 1rem;
         border-radius: 0.5rem;
         margin-bottom: 1rem;
-        background-color: #f0f2f6;
         box-shadow: 0 0.15rem 0.5rem rgba(0, 0, 0, 0.1);
     }
     .info-text {
@@ -403,7 +402,6 @@ st.markdown("""
         color: #424242;
     }
     .highlight {
-        background-color: #e3f2fd;
         padding: 0.5rem;
         border-radius: 0.3rem;
         border-left: 0.3rem solid #1976D2;
