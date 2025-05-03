@@ -1,11 +1,6 @@
 import streamlit as st
 
-st.set_page_config(
-    page_title="Marathwada Water Resource Analysis Dashboard",
-    page_icon="💧",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+
 
 import geemap.foliumap as geemap
 import datetime
@@ -29,15 +24,13 @@ import ee
 import base64
 from io import BytesIO
 import zipfile
-from dotenv import load_dotenv
-load_dotenv()
 
-PROJECT_NAME = os.getenv("PROJECT_NAME")
+PROJECT_NAME = ("be-project-aaronfurtado2003")
 
 ee.Authenticate()
-ee.Initialize(project=PROJECT_NAME)
+ee.Initialize(project='ee-crce9542ce')
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+GEMINI_API_KEY = ('AIzaSyDKeZTET-zYoffnmqBWBbtsnOMtESL-jTA')
 genai.configure(api_key=GEMINI_API_KEY)
 
 def create_zones(image, num_zones=5):
@@ -173,6 +166,9 @@ def render_metrics(df, parameter):
 
     style_metric_cards()
 
+# ===============================
+# BLOCK 5: DATA COLLECTION & TIME SERIES
+# ===============================
 @st.cache_data
 def load_data(start_date, end_date):
     # Define region
@@ -308,16 +304,15 @@ palette_dict = {
     'soil_moisture': ['#ffffb2', '#fecc5c', '#fd8d3c', '#f03b20', '#bd0026'],
     'elevation': ['#f7fcf5', '#e5f5e0', '#c7e9c0', '#a1d99b', '#74c476', '#41ab5d', '#238b45', '#005a32'],
     'slope': ['#ffffcc', '#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#f03b20', '#bd0026'],
-    'lulc': ['#d9f0a3', '#addd8e', '#78c679', '#31a354', '#006837'],
-    'soil': ['#f7fcb9', '#addd8e', '#31a354'],
-    'geom': ['#f7fcf0', '#e0f3db', '#ccebc5', '#a8ddb5', '#7bccc4', '#4eb3d3', '#2b8cbe', '#0868ac', '#084081'],
+    'lulc': ['#006400', '#8B4513', '#90EE90', '#FFD700', '#FF0000', '#808080', '#0000FF'],  # 7 colors for LULC
+    'soil': ['#8B4513', '#D2B48C', '#CD853F', '#DEB887', '#F4A460'],  # 5 colors for Soil Texture
+    'geom': ['#F5F5DC', '#D2B48C', '#8B4513', '#A0522D', '#8B7355'],  # 5 colors for Geomorphology
     'dist_to_water': ['#f7fbff', '#deebf7', '#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594'],
     'runoff_coeff': ['#ffffcc', '#ffeda0', '#feb24c', '#fd8d3c', '#f03b20', '#bd0026']
 }
 
 color_map = {
     "Rainfall": '#1E88E5',
-    "NDVI": '#43A047',
     "NDWI": '#00ACC1',
     "Soil Moisture": '#FB8C00',
     "Elevation": '#7B1FA2',
@@ -333,9 +328,6 @@ color_map = {
 zone_meanings = {
     "Rainfall": [
         "Very Low Rainfall", "Low Rainfall", "Moderate Rainfall", "High Rainfall", "Very High Rainfall"
-    ],
-    "NDVI": [
-        "Very Poor Vegetation", "Poor Vegetation", "Moderate Vegetation", "Good Vegetation", "Very Good Vegetation"
     ],
     "NDWI": [
         "Very Low Water Content", "Low Water Content", "Moderate Water Content", "High Water Content", "Very High Water Content"
@@ -353,28 +345,52 @@ zone_meanings = {
         "Very Gentle Slope", "Gentle Slope", "Moderate Slope", "Steep Slope", "Very Steep Slope"
     ],
     "LULC": [
-        "Mostly Water/Urban", "Mostly Cropland", "Mixed Land Use", "Mostly Forest", "Dense Forest/Natural"
+        "Tree Cover", "Shrubland", "Grassland", "Cropland", "Built-up", "Bare/Sparse", "Wetlands"
     ],
     "Soil Texture": [
-        "Very Fine Texture", "Fine Texture", "Moderate Texture", "Coarse Texture", "Very Coarse Texture"
+        "Cl (Clay)", "SiCl (Silty Clay)", "SaCl (Sandy Clay)", "ClLo (Clay Loam)", "SiClLo (Silty Clay Loam)"
     ],
     "Geomorphology": [
-        "Plains", "Low Hills", "Moderate Hills", "High Hills", "Mountains"
+        "Flat Plains", "Smooth Hills", "Steep Hills", "Mountains", "Valleys"
     ]
 }
 
 def show_legend(name, thresholds, palette):
     st.markdown(f"**{name} Zones**")
     meanings = zone_meanings.get(name, ["Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5"])
-    for i in range(5):
-        st.markdown(
-            f'<div style="display: flex; align-items: center;">'
-            f'<div style="width: 20px; height: 20px; background: {palette[i]}; margin-right: 8px; border: 1px solid #888;"></div>'
-            f'Zone {i+1}: {thresholds[i]:.2f} - {thresholds[i+1]:.2f} <br>'
-            f'<span style="font-size:0.9em;color:#555;">{meanings[i]}</span>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
+    
+    # Special handling for LULC, Soil Texture, and Geomorphology
+    if name in ["LULC", "Soil Texture", "Geomorphology"]:
+        for i, meaning in enumerate(meanings):
+            st.markdown(
+                f'<div style="display: flex; align-items: center;">'
+                f'<div style="width: 20px; height: 20px; background: {palette[i]}; margin-right: 8px; border: 1px solid #888;"></div>'
+                f'<span style="font-size:0.9em;color:#555;">{meaning}</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+    else:
+        # Default handling for other parameters
+        for i in range(5):
+            st.markdown(
+                f'<div style="display: flex; align-items: center;">'
+                f'<div style="width: 20px; height: 20px; background: {palette[i]}; margin-right: 8px; border: 1px solid #888;"></div>'
+                f'Zone {i+1}: {thresholds[i]:.2f} - {thresholds[i+1]:.2f} <br>'
+                f'<span style="font-size:0.9em;color:#555;">{meanings[i]}</span>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+# ===============================
+# BLOCK 1: PAGE CONFIGURATION
+# ===============================
+
+# Add this at the very top of the file, after the imports and before the title and header
+st.markdown("""
+<div style="text-align: center; margin-bottom: 2rem;">
+    <h2 style="color: #1E88E5; font-weight: bold;">PANI - Precipitation Analysis for Natural Integration</h2>
+</div>
+""", unsafe_allow_html=True)
 
 # Custom CSS for styling
 st.markdown("""
@@ -395,7 +411,7 @@ st.markdown("""
         padding: 1rem;
         border-radius: 0.5rem;
         margin-bottom: 1rem;
-        background-color: #f0f2f6;
+        # background-color: 
         box-shadow: 0 0.15rem 0.5rem rgba(0, 0, 0, 0.1);
     }
     .info-text {
@@ -403,7 +419,7 @@ st.markdown("""
         color: #424242;
     }
     .highlight {
-        background-color: #e3f2fd;
+        # background-color: #e3f2fd;
         padding: 0.5rem;
         border-radius: 0.3rem;
         border-left: 0.3rem solid #1976D2;
@@ -438,7 +454,6 @@ with st.sidebar:
     st.header("Dataset Information")
     st.markdown("""
     - **Rainfall**: CHIRPS daily precipitation
-    - **NDVI**: Normalized Difference Vegetation Index (Sentinel-2)
     - **NDWI**: Normalized Difference Water Index (Sentinel-2)
     - **Soil Moisture**: NASA SMAP soil moisture product
     - **Elevation**: SRTM Digital Elevation Model
@@ -456,6 +471,9 @@ with st.sidebar:
 # Initialize or load data
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
+    st.session_state.rainfall_insight = ""
+    st.session_state.ndwi_insight = ""
+    st.session_state.soil_moisture_insight = ""
 
 if data_load or not st.session_state.data_loaded:
     with st.spinner("Loading data from Earth Engine... This may take a moment."):
@@ -466,7 +484,6 @@ if data_load or not st.session_state.data_loaded:
         # Generate AI insights for each parameter
         with st.spinner("Generating AI insights..."):
             st.session_state.rainfall_insight = gemini_insights('Rainfall', data['rainfall_df'])
-            st.session_state.ndvi_insight = gemini_insights('NDVI', data['ndvi_df'])
             st.session_state.ndwi_insight = gemini_insights('NDWI', data['ndwi_df'])
             st.session_state.soil_moisture_insight = gemini_insights('Soil Moisture', data['soil_moisture_df'])
 
@@ -490,12 +507,15 @@ tabs = st.tabs([
     "💾 Data Download"
 ])
 
+# ===============================
+# BLOCK 8: DASHBOARD OVERVIEW TAB
+# ===============================
 with tabs[0]:
     st.markdown('<h2 class="sub-header">Water Resource Dashboard Overview</h2>', unsafe_allow_html=True)
 
     # Key metrics overview
     st.markdown("### Key Metrics")
-    metrics_col1, metrics_col2 = st.columns(2)
+    metrics_col1 = st.columns(1)[0]  # Get the first (and only) column from the list
 
     with metrics_col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -503,12 +523,6 @@ with tabs[0]:
         render_metrics(data['rainfall_df'], "Rainfall (mm)")
         st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("#### NDVI (Vegetation Health)")
-        render_metrics(data['ndvi_df'], "NDVI")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with metrics_col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("#### NDWI (Water Content)")
         render_metrics(data['ndwi_df'], "NDWI")
@@ -535,7 +549,6 @@ with tabs[0]:
         return df
 
     rainfall_norm = normalize_series(data['rainfall_df'].copy())
-    ndvi_norm = normalize_series(data['ndvi_df'].copy())
     ndwi_norm = normalize_series(data['ndwi_df'].copy())
     soil_moisture_norm = normalize_series(data['soil_moisture_df'].copy())
 
@@ -546,14 +559,6 @@ with tabs[0]:
             y=rainfall_norm['normalized'],
             name='Rainfall',
             line=dict(color='#1E88E5', width=2)
-        ))
-
-    if not ndvi_norm.empty:
-        fig.add_trace(go.Scatter(
-            x=ndvi_norm['date'],
-            y=ndvi_norm['normalized'],
-            name='NDVI',
-            line=dict(color='#43A047', width=2)
         ))
 
     if not ndwi_norm.empty:
@@ -594,39 +599,6 @@ with tabs[0]:
     insight_col1, insight_col2 = st.columns(2)
 
     with insight_col1:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("#### NDVI vs Rainfall")
-
-        # Create scatter plot of NDVI vs Rainfall
-        if not data['ndvi_df'].empty and not data['rainfall_df'].empty:
-            # Merge dataframes
-            merged_df = pd.merge(
-                data['ndvi_df'],
-                data['rainfall_df'],
-                left_on='date',
-                right_on='date',
-                suffixes=('_ndvi', '_rainfall')
-            )
-
-            fig = px.scatter(
-                merged_df,
-                x='value_rainfall',
-                y='value_ndvi',
-                trendline="ols",
-                labels={
-                    'value_rainfall': 'Rainfall (mm)',
-                    'value_ndvi': 'NDVI'
-                },
-                title="Vegetation Health vs Rainfall Correlation"
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Insufficient data for correlation analysis.")
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with insight_col2:
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("#### Water Availability Trends")
 
@@ -686,6 +658,9 @@ with tabs[0]:
 
         st.markdown('</div>', unsafe_allow_html=True)
 
+# ===============================
+# BLOCK 9: GEOGRAPHIC ANALYSIS TAB
+# ===============================
 with tabs[1]:
     st.markdown('<h2 class="sub-header">Geographic Analysis</h2>', unsafe_allow_html=True)
     st.markdown("""
@@ -695,7 +670,6 @@ with tabs[1]:
 
     geo_parameters = [
         ("Rainfall", 'rainfall_mean', palette_dict['rainfall']),
-        ("NDVI", 'ndvi_mean', palette_dict['ndvi']),
         ("NDWI", 'ndwi_mean', palette_dict['ndwi']),
         ("Soil Moisture", 'soil_moisture_mean', palette_dict['soil_moisture']),
         ("Elevation", 'elevation', palette_dict['elevation']),
@@ -746,22 +720,22 @@ with tabs[1]:
         #### Interpretation Tips
 
         When analyzing the map:
-        - **NDVI**: Higher values indicate healthier vegetation
         - **NDWI**: Higher values indicate more surface water content
         - **Rainfall**: Higher values indicate greater precipitation
         - **Soil Moisture**: Higher values indicate wetter soils
         """)
         st.markdown('</div>', unsafe_allow_html=True)
 
+# ===============================
+# BLOCK 10: TIME SERIES ANALYSIS TAB
+# ===============================
 with tabs[2]:
     st.markdown('<h2 class="sub-header">Time Series Analysis</h2>', unsafe_allow_html=True)
 
     # Parameter selection
-    # Parameter selection
     parameters = [
         "All Parameters",
         "Rainfall",
-        "NDVI",
         "NDWI",
         "Soil Moisture",
         "Elevation",
@@ -778,9 +752,9 @@ with tabs[2]:
     if selected_param == "All Parameters":
         # Create time series plots for all parameters
         fig = make_subplots(
-            rows=4,
+            rows=3,
             cols=1,
-            subplot_titles=("Rainfall", "NDVI", "NDWI", "Soil Moisture"),
+            subplot_titles=("Rainfall", "NDWI", "Soil Moisture"),
             vertical_spacing=0.1,
             shared_xaxes=True
         )
@@ -797,17 +771,6 @@ with tabs[2]:
                 row=1, col=1
             )
 
-        if not data['ndvi_df'].empty:
-            fig.add_trace(
-                go.Scatter(
-                    x=data['ndvi_df']['date'],
-                    y=data['ndvi_df']['value'],
-                    name='NDVI',
-                    line=dict(color='#43A047', width=2)
-                ),
-                row=2, col=1
-            )
-
         if not data['ndwi_df'].empty:
             fig.add_trace(
                 go.Scatter(
@@ -816,7 +779,7 @@ with tabs[2]:
                     name='NDWI',
                     line=dict(color='#00ACC1', width=2)
                 ),
-                row=3, col=1
+                row=2, col=1
             )
 
         if not data['soil_moisture_df'].empty:
@@ -827,33 +790,30 @@ with tabs[2]:
                     name='Soil Moisture',
                     line=dict(color='#FB8C00', width=2)
                 ),
-                row=4, col=1
+                row=3, col=1
             )
 
         # Update layout
         fig.update_layout(
-            height=800,
+            height=600,
             title_text="Time Series Analysis of All Parameters",
             showlegend=False
         )
 
         # Update y-axis labels
         fig.update_yaxes(title_text="Rainfall (mm)", row=1, col=1)
-        fig.update_yaxes(title_text="NDVI", row=2, col=1)
-        fig.update_yaxes(title_text="NDWI", row=3, col=1)
-        fig.update_yaxes(title_text="Soil Moisture", row=4, col=1)
+        fig.update_yaxes(title_text="NDWI", row=2, col=1)
+        fig.update_yaxes(title_text="Soil Moisture", row=3, col=1)
 
         # Update x-axis label
-        fig.update_xaxes(title_text="Date", row=4, col=1)
+        fig.update_xaxes(title_text="Date", row=3, col=1)
 
         st.plotly_chart(fig, use_container_width=True)
 
     else:
         # Single parameter plot
-        # Single parameter plot
         param_map = {
             "Rainfall": data['rainfall_df'],
-            "NDVI": data['ndvi_df'],
             "NDWI": data['ndwi_df'],
             "Soil Moisture": data['soil_moisture_df'],
             "Elevation": pd.DataFrame({
@@ -923,7 +883,6 @@ with tabs[2]:
 
         color_map = {
             "Rainfall": '#1E88E5',
-            "NDVI": '#43A047',
             "NDWI": '#00ACC1',
             "Soil Moisture": '#FB8C00',
             "Elevation": '#7B1FA2',
@@ -1040,6 +999,9 @@ with tabs[2]:
         else:
             st.info(f"No {selected_param} data available for the selected time period.")
 
+# ===============================
+# BLOCK 11: SEASONAL PATTERNS TAB
+# ===============================
 with tabs[3]:
     st.markdown('<h2 class="sub-header">Seasonal Analysis</h2>', unsafe_allow_html=True)
 
@@ -1047,16 +1009,14 @@ with tabs[3]:
     st.markdown("### Monthly and Seasonal Patterns")
 
     # Parameter selection for seasonal analysis
-    # Parameter selection for seasonal analysis
     seasonal_param = st.selectbox(
         "Select Parameter for Seasonal Analysis",
-        ["Rainfall", "NDVI", "NDWI", "Soil Moisture", "Runoff Coefficient"]
+        ["Rainfall", "NDWI", "Soil Moisture", "Runoff Coefficient"]
     )
 
     # Map parameters to dataframes
     seasonal_param_map = {
         "Rainfall": data['rainfall_df'],
-        "NDVI": data['ndvi_df'],
         "NDWI": data['ndwi_df'],
         "Soil Moisture": data['soil_moisture_df']
     }
@@ -1192,6 +1152,10 @@ with tabs[3]:
     else:
         st.info(f"No {seasonal_param} data available for the selected time period.")
 
+
+# ===============================
+# BLOCK 12: AI INSIGHTS TAB
+# ===============================
 with tabs[4]:
     st.markdown('<h2 class="sub-header">AI-Powered Insights</h2>', unsafe_allow_html=True)
 
@@ -1203,22 +1167,15 @@ with tabs[4]:
     """, unsafe_allow_html=True)
 
     # Parameter selection for insights
-    # Parameter selection for insights
     insight_param = st.selectbox(
         "Select Parameter for AI Insights",
-        ["Rainfall", "NDVI", "NDWI", "Soil Moisture", "Runoff Coefficient", "Land Use & Terrain", "Comprehensive Analysis"]
+        ["Rainfall", "NDWI", "Soil Moisture", "Runoff Coefficient", "Land Use & Terrain", "Comprehensive Analysis"]
     )
 
     if insight_param == "Rainfall":
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown("### Rainfall Insights")
         st.markdown(st.session_state.rainfall_insight)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    elif insight_param == "NDVI":
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### NDVI (Vegetation Health) Insights")
-        st.markdown(st.session_state.ndvi_insight)
         st.markdown('</div>', unsafe_allow_html=True)
 
     elif insight_param == "NDWI":
@@ -1272,9 +1229,14 @@ with tabs[4]:
             # Prepare data summary for AI
             summary_data = {
                 'rainfall_stats': data['rainfall_df']['value'].describe().to_dict() if not data['rainfall_df'].empty else {},
-                'ndvi_stats': data['ndvi_df']['value'].describe().to_dict() if not data['ndvi_df'].empty else {},
                 'ndwi_stats': data['ndwi_df']['value'].describe().to_dict() if not data['ndwi_df'].empty else {},
-                'soil_moisture_stats': data['soil_moisture_df']['value'].describe().to_dict() if not data['soil_moisture_df'].empty else {}
+                'soil_moisture_stats': data['soil_moisture_df']['value'].describe().to_dict() if not data['soil_moisture_df'].empty else {},
+                'elevation_stats': data['elevation'].reduceRegion(reducer=ee.Reducer.mean(), geometry=data['region'], scale=1000, maxPixels=1e9).getInfo()['elevation'],
+                'slope_stats': data['slope'].reduceRegion(reducer=ee.Reducer.mean(), geometry=data['region'], scale=1000, maxPixels=1e9).getInfo()['slope'],
+                'lulc_stats': data['lulc'].reduceRegion(reducer=ee.Reducer.mode(), geometry=data['region'], scale=1000, maxPixels=1e9).getInfo()['Map'],
+                'soil_texture_stats': data['soil'].reduceRegion(reducer=ee.Reducer.mode(), geometry=data['region'], scale=1000, maxPixels=1e9).getInfo()['b0'],
+                'geomorphology_stats': data['geom'].reduceRegion(reducer=ee.Reducer.mode(), geometry=data['region'], scale=1000, maxPixels=1e9).getInfo()['constant'],
+                'rainfall_stats': data['rainfall_df']['value'].describe().to_dict() if not data['rainfall_df'].empty else {}
             }
 
             # Convert to JSON for prompt
@@ -1293,7 +1255,7 @@ with tabs[4]:
             Statistics Summary:
             {summary_json}
 
-            The analysis period is from {start_date} to {end_date}.
+            The analysis period is from {start_date} - 1/1/2023 to {end_date} - 31/12/2023.
             """
 
             model = genai.GenerativeModel('gemini-1.5-flash')
@@ -1320,6 +1282,9 @@ with tabs[4]:
         These insights should be used to complement scientific analysis and local knowledge, not replace them.
         """)
 
+# ===============================
+# BLOCK 13: DATA DOWNLOAD TAB
+# ===============================
 with tabs[5]:
     st.markdown('<h2 class="sub-header">Data Download</h2>', unsafe_allow_html=True)
 
@@ -1332,7 +1297,6 @@ with tabs[5]:
     # Create data dictionary for downloads
     download_data = {
         'rainfall': data['rainfall_df'],
-        'ndvi': data['ndvi_df'],
         'ndwi': data['ndwi_df'],
         'soil_moisture': data['soil_moisture_df'],
         'elevation': pd.DataFrame({'parameter': 'elevation', 'mean': data['elevation'].reduceRegion(reducer=ee.Reducer.mean(), geometry=data['region'], scale=1000, maxPixels=1e9).getInfo()['elevation']}, index=[0]),
@@ -1363,22 +1327,13 @@ with tabs[5]:
         else:
             st.info("No Soil Moisture data available for the selected period.")
 
-    # Row 2: NDVI and NDWI
-    row2_col1, row2_col2 = st.columns(2)
-    with row2_col1:
-        st.markdown("#### NDVI Data")
-        if not data['ndvi_df'].empty:
-            st.dataframe(data['ndvi_df'].head(10), use_container_width=True)
-            st.markdown(get_table_download_link(data['ndvi_df'], "ndvi_data", "Download NDVI Data"), unsafe_allow_html=True)
-        else:
-            st.info("No NDVI data available for the selected period.")
-    with row2_col2:
-        st.markdown("#### NDWI Data")
-        if not data['ndwi_df'].empty:
-            st.dataframe(data['ndwi_df'].head(10), use_container_width=True)
-            st.markdown(get_table_download_link(data['ndwi_df'], "ndwi_data", "Download NDWI Data"), unsafe_allow_html=True)
-        else:
-            st.info("No NDWI data available for the selected period.")
+    # Row 2: NDWI
+    st.markdown("#### NDWI Data")
+    if not data['ndwi_df'].empty:
+        st.dataframe(data['ndwi_df'].head(10), use_container_width=True)
+        st.markdown(get_table_download_link(data['ndwi_df'], "ndwi_data", "Download NDWI Data"), unsafe_allow_html=True)
+    else:
+        st.info("No NDWI data available for the selected period.")
 
     # Row 3: Elevation and DEM
     row3_col1, row3_col2 = st.columns(2)
@@ -1499,9 +1454,8 @@ with tabs[5]:
     <h4>Data Sources:</h4>
     <ul>
         <li><strong>Rainfall:</strong> CHIRPS Daily Precipitation (mm) - 0.05° resolution</li>
-        <li><strong>NDVI:</strong> Normalized Difference Vegetation Index from Sentinel-2 (Range: -1 to 1)</li>
         <li><strong>NDWI:</strong> Normalized Difference Water Index from Sentinel-2 (Range: -1 to 1)</li>
-        <li><strong>Soil Moisture:</strong> NASA SMAP Enhanced L3 Radiometer Global Daily 9 km (cm³/cm³)</li>
+        <li><strong>Soil Moisture:</strong> NASA SMAP soil moisture product</li>
         <li><strong>Elevation:</strong> SRTM Digital Elevation Model (meters)</li>
     </ul>
 
