@@ -6,6 +6,14 @@ from data_initialization import categorical_labels
 import pandas as pd
 import ee
 import matplotlib.pyplot as plt
+import scipy
+import scipy.ndimage
+from scipy.interpolate import griddata
+import cv2
+import os
+import joblib
+import rasterio
+from rasterio.transform import from_bounds
 
 def fill_depressions(dem):
     filled = dem.focal_min(2).unmask(dem)
@@ -22,18 +30,20 @@ def resize_img(img, target_size=512):
     resized_width = int(width * scale_factor)
     resized_img = zoom(
         img, (resized_height / height, resized_width / width), order=0
-        )  # Nearest-neighbor for img
+    )  # Nearest-neighbor for img
     return resized_img
 
 
-def smooth_stack_from_array_dict(array_dict, target_size=512, categorical_bands=None,mask_value=999999):
+def smooth_stack_from_array_dict(
+    array_dict, target_size=512, categorical_bands=None, mask_value=999999
+):
     band_data = array_dict["properties"]
     band_names = list(band_data.keys())
     resized_bands = []
     for band in band_names:
         arr = np.array(band_data[band])
         arr = np.where(arr == mask_value, np.nan, arr)
-        
+
         # Compute target scale factor for the shortest side
         if arr.ndim != 2:
             print(f"Skipping {band} due to shape: {arr.shape}")
@@ -65,12 +75,11 @@ def smooth_stack_from_array_dict(array_dict, target_size=512, categorical_bands=
 
     # Stack all bands into final array
     stacked = np.stack(resized_bands, axis=-1)  # Shape: (H, W, num_bands)
-    updated_stack=replace_nans_where_others_valid(stacked,band_names)
+    updated_stack = replace_nans_where_others_valid(stacked, band_names)
     return updated_stack, band_names
 
 
-
-def generate_probability_mask(data,band_names,weights):
+def generate_probability_mask(data, band_names, weights):
     if band_names is None:
         raise ValueError("band_names should not be None")
     if weights is None:
@@ -80,13 +89,13 @@ def generate_probability_mask(data,band_names,weights):
     bands = []
     wts = []
 
-    for id,band in enumerate(band_names):
+    for id, band in enumerate(band_names):
         if band in band_names:
-            band_data=(np.array(data[id], dtype=np.float32))
+            band_data = np.array(data[id], dtype=np.float32)
             if np.all(np.isnan(band_data)):
                 print(f"[WARN] Band '{band}' is completely NaN — skipping.")
                 continue
-            
+
             wts.append(weights.get(band, 0))
 
             min_val = np.nanmin(band_data)
@@ -117,6 +126,7 @@ def generate_probability_mask(data,band_names,weights):
 
     return prob_mask, level_mask, weighted_sum
 
+
 def normalize_layer(array):
     return (array - np.nanmin(array)) / (np.nanmax(array) - np.nanmin(array))
 
@@ -130,25 +140,28 @@ def quantile_bins(data, n_classes=5):
     return tiers, breaks
 
 
-
 def kmeans_bins(data, n_classes=5):
     # Flatten the data and remove NaN values
     flat = data[~np.isnan(data)].flatten().reshape(-1, 1)
-    
+
     # Apply KMeans clustering
-    kmeans = KMeans(n_clusters=n_classes, n_init='auto', random_state=42).fit(flat)
-    
+    kmeans = KMeans(n_clusters=n_classes, n_init="auto", random_state=42).fit(flat)
+
     # Sort cluster centers
     centers = sorted(kmeans.cluster_centers_.flatten())
-    
+
     # Create the breaks array
-    breaks = [float(np.min(flat))] + \
-            [float((centers[i] + centers[i+1]) / 2) for i in range(len(centers) - 1)] + \
-            [float(np.max(flat))]
+    breaks = (
+        [float(np.min(flat))]
+        + [float((centers[i] + centers[i + 1]) / 2) for i in range(len(centers) - 1)]
+        + [float(np.max(flat))]
+    )
     breaks = np.array(breaks).flatten()
     # Ensure breaks is a numpy array for consistency
     flat_data = data.flatten()
-    tiers = np.digitize(flat_data, breaks[1:-1], right=False).astype(float) + 1  # values from 1 to n_classes
+    tiers = (
+        np.digitize(flat_data, breaks[1:-1], right=False).astype(float) + 1
+    )  # values from 1 to n_classes
 
     # Step 6: Clip and restore shape
     tiers = np.clip(tiers, 1, n_classes)
@@ -157,35 +170,53 @@ def kmeans_bins(data, n_classes=5):
     # Step 7: Restore NaNs where they originally existed
     tiers[np.isnan(data)] = np.nan
     # Use np.digitize to assign data to the correct tier
-    
+
     return tiers, breaks
 
 
-def convert_smooth_data_to_bins(smoothed_stack,band_names,n_classes=5,categorical_bands=categorical_labels.keys(),method='kmeans'):
+def convert_smooth_data_to_bins(
+    smoothed_stack,
+    band_names,
+    n_classes=5,
+    categorical_bands=categorical_labels.keys(),
+    method="kmeans",
+):
     tiers = {}
     breaks = {}
-    for id,band in enumerate(band_names):
-        band_data=np.array(smoothed_stack[:,:,id])
+    for id, band in enumerate(band_names):
+        band_data = np.array(smoothed_stack[:, :, id])
         if band not in categorical_bands:
-            if method=='kmeans':
-                tiers[band],breaks[band] = kmeans_bins((band_data),n_classes=n_classes)
-            elif method=='quantile':
-                tiers[band],breaks[band] = quantile_bins((band_data),n_classes=n_classes)
+            if method == "kmeans":
+                tiers[band], breaks[band] = kmeans_bins(
+                    (band_data), n_classes=n_classes
+                )
+            elif method == "quantile":
+                tiers[band], breaks[band] = quantile_bins(
+                    (band_data), n_classes=n_classes
+                )
             else:
                 raise ValueError(f"Invalid method: {method}")
         else:
-            tiers[band]=band_data
-    return tiers,breaks
+            tiers[band] = band_data
+    return tiers, breaks
 
 
-
-def create_balanced_csv(stacked_array, level_mask, prob_mask, band_names, region_mask, num_points=1000, seed=42,name='PANI_Dataset'):
-    file_name=f'{name}.csv'
+def create_balanced_csv(
+    stacked_array,
+    level_mask,
+    prob_mask,
+    band_names,
+    region_mask,
+    num_points=1000,
+    seed=42,
+    name="PANI_Dataset",
+):
+    file_name = f"{name}.csv"
     np.random.seed(seed)
     h, w, n_bands = stacked_array.shape
 
     flat_data = stacked_array.reshape(-1, n_bands)
-    flat_levels = level_mask.flatten()  
+    flat_levels = level_mask.flatten()
     flat_probs = prob_mask.flatten()
     flat_mask = region_mask.flatten()
 
@@ -199,20 +230,24 @@ def create_balanced_csv(stacked_array, level_mask, prob_mask, band_names, region
     samples_per_class = num_points // 5
     sampled_rows = []
 
-    for level in range(1, 6): 
+    for level in range(1, 6):
         level_indices = np.where(flat_levels == level)[0]
 
         if len(level_indices) < samples_per_class:
-            print(f"⚠️ Not enough samples for level {level}. Found: {len(level_indices)}")
+            print(
+                f"⚠️ Not enough samples for level {level}. Found: {len(level_indices)}"
+            )
             sampled = level_indices
         else:
-            sampled = np.random.choice(level_indices, size=samples_per_class, replace=False)
+            sampled = np.random.choice(
+                level_indices, size=samples_per_class, replace=False
+            )
 
         for idx in sampled:
             row = list(flat_data[idx]) + [flat_levels[idx]]
             sampled_rows.append(row)
 
-    col_names = band_names + ['level']
+    col_names = band_names + ["level"]
     df = pd.DataFrame(sampled_rows, columns=col_names)
 
     df.to_csv(file_name, index=False)
@@ -220,9 +255,10 @@ def create_balanced_csv(stacked_array, level_mask, prob_mask, band_names, region
 
     return df
 
+
 def replace_nans_where_others_valid(data_stack, band_names=None):
     updated_stack = np.copy(data_stack)
-    height, width,n_bands = data_stack.shape
+    height, width, n_bands = data_stack.shape
 
     # Create a mask for pixels where at least one band is valid
     valid_any = ~np.all(np.isnan(data_stack), axis=0)  # shape: (height, width)
@@ -231,13 +267,125 @@ def replace_nans_where_others_valid(data_stack, band_names=None):
 
     for i in range(n_bands):
         band = data_stack[:, :, i]
-        nan_mask = np.isnan(band) & valid_any  # only replace where at least one value exists
+        nan_mask = (
+            np.isnan(band) & valid_any
+        )  # only replace where at least one value exists
         if np.any(nan_mask):
             band_min = np.nanmin(band)
             if band_names:
-                print(f"[INFO] Band '{band_names[i]}' replacing {np.sum(nan_mask)} NaNs with {band_min}")
+                print(
+                    f"[INFO] Band '{band_names[i]}' replacing {np.sum(nan_mask)} NaNs with {band_min}"
+                )
             band = band.copy()
             band[nan_mask] = band_min
         updated_stack[:, :, i] = band
 
     return updated_stack
+
+
+def compute_image_shape(region_bounds,image_res=512):
+    minx, miny, maxx, maxy = region_bounds
+    width_m = maxx - minx
+    height_m = maxy - miny
+    if width_m > height_m:
+            width_px = image_res
+            height_px = int((height_m / width_m) * image_res)
+    else:
+        height_px = image_res
+        width_px = int((width_m / height_m) * image_res)
+
+    image_shape = (height_px, width_px)
+    return image_shape
+
+
+def get_projected_bounds(region, mask_projection):
+    region_proj = region.transform(mask_projection, maxError=1)
+    bounds_geojson = region_proj.bounds(maxError=1).getInfo()
+    coords = bounds_geojson["coordinates"][0]
+    xs = [c[0] for c in coords]
+    ys = [c[1] for c in coords]
+    minx, maxx = min(xs), max(xs)
+    miny, maxy = min(ys), max(ys)
+    return [minx, miny, maxx, maxy]
+
+def get_mask_array(region_self_mask, region_bounds,scale,output_shape, mask_value=0):
+    minx, miny, maxx, maxy = region_bounds
+    region_rect = ee.Geometry.Rectangle([minx, miny, maxx, maxy])
+
+    # Reproject using known scale
+    reprojected = region_self_mask.unmask(mask_value).int8().reproject(
+        crs=region_self_mask.projection(),
+        scale=scale  # e.g., 1161.83
+    )
+
+    # Sample at that resolution
+    sampled_dict = reprojected.sampleRectangle(
+        region=region_rect,
+        defaultValue=mask_value
+    ).getInfo()
+    band_name = list(sampled_dict['properties'].keys())[0]  # e.g., "constant"
+    mask_array = np.array(sampled_dict['properties'][band_name])
+    # print(f"Original EE mask shape: {mask_array.shape}")
+    resized_mask = cv2.resize(mask_array, (output_shape[1], output_shape[0]), interpolation=cv2.INTER_NEAREST)
+    # print(f"Resized Mask shape:",resized_mask.shape)
+    bool_mask = resized_mask == 1
+    return bool_mask
+
+def interpolate_image(df, band, region_bounds, image_shape,smoothing_coeff=1.5):
+    minx, miny, maxx, maxy = region_bounds
+    height, width = image_shape
+
+    # Grid
+    lon_grid = np.linspace(minx, maxx, width)
+    lat_grid = np.linspace(miny, maxy, height)
+    grid_lon, grid_lat = np.meshgrid(lon_grid, lat_grid)
+
+    # Known points and values
+    points = df[["lon", "lat"]].values
+    values = df[band].values
+
+    # Interpolation
+    interpolated = griddata(points, values, (grid_lon, grid_lat), method="linear")
+
+    # Replace remaining NaNs with nearest neighbor
+    if np.isnan(interpolated).any():
+        interpolated = griddata(points, values, (grid_lon, grid_lat), method="nearest")
+    if smoothing_coeff > 0:
+        interpolated = scipy.ndimage.gaussian_filter(interpolated, sigma=smoothing_coeff)
+    return interpolated
+
+def save_data_dict_as_geotiffs_and_joblib(data_dict, region_bounds, save_dir, joblib_path=None, crs='EPSG:4326',save=False):
+    """
+    Saves each image in the data_dict as a GeoTIFF and also saves the full dictionary as a joblib file.
+    data_dict[band][date] = np.array
+    """
+    os.makedirs(save_dir, exist_ok=True)
+
+    width, height = next(iter(next(iter(data_dict.values())).values())).shape[::-1]
+    bands = list(data_dict.keys())
+    dates = sorted(data_dict[bands[0]].keys())
+    transform = from_bounds(*region_bounds, width, height)
+    if save:
+        for date in dates:
+                stacked = np.stack([data_dict[band][date] for band in bands])
+                output_path = os.path.join(save_dir, f"{date}.tif")
+                with rasterio.open(
+                    output_path,
+                    'w',
+                    driver='GTiff',
+                    height=stacked.shape[1],
+                    width=stacked.shape[2],
+                    count=stacked.shape[0],
+                    dtype=stacked.dtype,
+                    crs=crs,
+                    transform=transform,
+                    nodata=np.nan
+                ) as dst:
+                    for i in range(stacked.shape[0]):
+                        dst.write(stacked[i], i + 1)
+
+    print(f"✅ Saved all GeoTIFFs to: {save_dir}")
+
+    if joblib_path:
+        joblib.dump(data_dict, joblib_path,compress=0)
+        print(f"✅ Saved data dictionary as joblib: {joblib_path}")

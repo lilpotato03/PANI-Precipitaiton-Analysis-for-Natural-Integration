@@ -75,6 +75,16 @@ soilTx_colors = [
     "#ff005b",  # 12 - Sa
 ]
 
+era5_bands=[
+    'dewpoint_temperature_2m',
+    'temperature_2m',
+    'runoff_sum',
+    'u_component_of_wind_10m',
+    'v_component_of_wind_10m',
+    'surface_pressure',
+    'total_precipitation_sum',
+]
+
 
 
 band_cmaps["soilTx"] = ListedColormap(soilTx_colors)

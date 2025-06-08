@@ -1,3 +1,5 @@
 env
 .env
 __pycache__/
+era5_2000_point_data_marathwada_out_geotifs
+era5*
